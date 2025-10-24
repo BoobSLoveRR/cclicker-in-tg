@@ -1,4 +1,4 @@
-<!doctype html>
+ <!doctype html>
 <html lang="ru">
 <head>
 <meta charset="utf-8" />
@@ -104,150 +104,379 @@
   function format(n){ return Math.floor(n); }
   function costFor(item){ return Math.ceil(item.baseCost * Math.pow(1.15, item.count)); }
 
-  function render(){
-    scoreEl.textContent = format(state.score);
-    cpsEl.textContent = (state.cps).toFixed(1);
-    savedAtEl.textContent = localStorage.getItem('clicker_saved_at') || '—';
+    <textarea id="saveArea" class="exportarea" placeholder="Вставьте сюда JSON для импорта"></textarea>
+</div>
 
-    // shop
-    shopEl.innerHTML = '';
-    state.items.forEach(it => {
-      const div = document.createElement('div');
-      div.className = 'shop-item';
-      const left = document.createElement('div');
-      left.innerHTML = <div style="font-weight:700">${it.name}</div><div class="muted small">x${it.count}</div>;
-      const right = document.createElement('div');
-      const cost = costFor(it);
-      right.innerHTML = <div style="text-align:right"><div style="font-weight:700">${cost}</div><div class="muted small">c/шт</div></div>;
-      const buy = document.createElement('button');
-      buy.className = 'secondary';
-      buy.textContent = 'Купить';
-      buy.onclick = ()=>buyItem(it.id);
-      right.appendChild(buy);
-      div.appendChild(left);
-      div.appendChild(right);
-      shopEl.appendChild(div);
-    });
+<script>
+/* ====== Балансы и шаблоны (Casual / Normal / Hardcore) ====== */
+const BALANCES = {
+  casual: {
+    PRESTIGE_THRESHOLD: 4000,
+    templates: [
+      { id:'hand',   name:'Рука',       desc:'+1 к клику',   type:'click', baseCost:6,    baseGain:1,  costMult:1.10, unlock:0, prereq:null },
+      { id:'brush',  name:'Щётка',      desc:'+5 к клику',   type:'click', baseCost:30,   baseGain:5,  costMult:1.12, unlock:30, prereq:null },
+      { id:'auto1',  name:'Машина',     desc:'+1 CPS',       type:'cps',   baseCost:12,   baseGain:1,  costMult:1.11, unlock:10, prereq:null },
+      { id:'auto2',  name:'Фабрика',    desc:'+8 CPS',       type:'cps',   baseCost:180,  baseGain:8,  costMult:1.12, unlock:200, prereq:{id:'auto1', level:4} },
+      { id:'auto3',  name:'Завод',      desc:'+60 CPS',      type:'cps',   baseCost:1800, baseGain:60, costMult:1.13, unlock:1200, prereq:{id:'auto2', level:6} },
+      { id:'mega',   name:'Мегаручка',  desc:'x2 сила клика', type:'mult', baseCost:800, baseGain:2, costMult:1.6, unlock:600, prereq:{id:'brush', level:3} },
+      { id:'hyper',  name:'Гиперрука',  desc:'x3 сила клика', type:'mult', baseCost:4200, baseGain:3, costMult:1.8, unlock:3000, prereq:[{id:'mega', level:2},{id:'auto2', level:4}] },
+      { id:'lab',    name:'Лаборатория', desc:'+180 CPS', type:'cps', baseCost:25000, baseGain:180, costMult:1.14, unlock:12000, prereq:[{id:'auto3', level:2},{id:'mega', level:2}] },
+      { id:'quant',  name:'Квантовый узел', desc:'+x (комбо)', type:'mult', baseCost:120000, baseGain:4, costMult:2.0, unlock:80000, prereq:[{id:'lab', level:1},{id:'hyper', level:1}] },
+      { id:'plant',  name:'Энергоплантация', desc:'+800 CPS', type:'cps', baseCost:600000, baseGain:800, costMult:1.12, unlock:400000, prereq:[{id:'lab', level:3},{id:'auto3', level:8}] },
+    ]
+  },
+  normal: {
+    PRESTIGE_THRESHOLD: 10000,
+    templates: [
+      { id:'hand',   name:'Рука',       desc:'+1 к клику',   type:'click', baseCost:8,    baseGain:1,  costMult:1.12, unlock:0, prereq:null },
+      { id:'brush',  name:'Щётка',      desc:'+4 к клику',   type:'click', baseCost:55,   baseGain:4,  costMult:1.14, unlock:50, prereq:null },
+      { id:'auto1',  name:'Машина',     desc:'+1 CPS',       type:'cps',   baseCost:18,   baseGain:1,  costMult:1.12, unlock:20, prereq:null },
+      { id:'auto2',  name:'Фабрика',    desc:'+6 CPS',       type:'cps',   baseCost:380,  baseGain:6,  costMult:1.13, unlock:200, prereq:{id:'auto1', level:5} },
+      { id:'auto3',  name:'Завод',      desc:'+40 CPS',      type:'cps',   baseCost:5400, baseGain:40, costMult:1.14, unlock:2000, prereq:{id:'auto2', level:10} },
+      { id:'mega',   name:'Мегаручка',  desc:'x2 сила клика', type:'mult', baseCost:1800, baseGain:2, costMult:1.8, unlock:1000, prereq:{id:'brush', level:5} },
+      { id:'hyper',  name:'Гиперрука',  desc:'x3 сила клика', type:'mult', baseCost:12000, baseGain:3, costMult:2.0, unlock:10000, prereq:[{id:'mega', level:2},{id:'auto2', level:5}] },
+      { id:'lab',    name:'Лаборатория', desc:'+200 CPS', type:'cps', baseCost:80000, baseGain:200, costMult:1.16, unlock:50000, prereq:[{id:'auto3', level:2},{id:'mega', level:3}] },
+      { id:'quant',  name:'Квантовый узел', desc:'+x (комбо)', type:'mult', baseCost:800000, baseGain:4, costMult:2.5, unlock:500000, prereq:[{id:'lab', level:1},{id:'hyper', level:1}] },
+      { id:'plant',  name:'Энергоплантация', desc:'+1000 CPS', type:'cps', baseCost:2500000, baseGain:1000, costMult:1.15, unlock:2000000, prereq:[{id:'lab', level:3},{id:'auto3', level:10}] },
+    ]
+  },
+  hardcore: {
+    PRESTIGE_THRESHOLD: 30000,
+    templates: [
+      { id:'hand',   name:'Рука',       desc:'+1 к клику',   type:'click', baseCost:12,    baseGain:1,  costMult:1.14, unlock:0, prereq:null },
+      { id:'brush',  name:'Щётка',      desc:'+3 к клику',   type:'click', baseCost:120,   baseGain:3,  costMult:1.16, unlock:120, prereq:null },
+      { id:'auto1',  name:'Машина',     desc:'+1 CPS',       type:'cps',   baseCost:35,   baseGain:1,  costMult:1.14, unlock:40, prereq:null },
+      { id:'auto2',  name:'Фабрика',    desc:'+5 CPS',       type:'cps',   baseCost:780,  baseGain:5,  costMult:1.15, unlock:600, prereq:{id:'auto1', level:6} },
+      { id:'auto3',  name:'Завод',      desc:'+30 CPS',      type:'cps',   baseCost:12000, baseGain:30, costMult:1.16, unlock:7000, prereq:{id:'auto2', level:12} },
+      { id:'mega',   name:'Мегаручка',  desc:'x2 сила клика', type:'mult', baseCost:6000, baseGain:2, costMult:2.0, unlock:4000, prereq:{id:'brush', level:6} },
+      { id:'hyper',  name:'Гиперрука',  desc:'x3 сила клика', type:'mult', baseCost:48000, baseGain:3, costMult:2.4, unlock:40000, prereq:[{id:'mega', level:3},{id:'auto2', level:8}] },
+      { id:'lab',    name:'Лаборатория', desc:'+140 CPS', type:'cps', baseCost:220000, baseGain:140, costMult:1.18, unlock:120000, prereq:[{id:'auto3', level:3},{id:'mega', level:4}] },
+      { id:'quant',  name:'Квантовый узел', desc:'+x (комбо)', type:'mult', baseCost:1200000, baseGain:4, costMult:3.0, unlock:900000, prereq:[{id:'lab', level:1},{id:'hyper', level:1}] },
+      { id:'plant',  name:'Энергоплантация', desc:'+700 CPS', type:'cps', baseCost:8000000, baseGain:700, costMult:1.18, unlock:5000000, prereq:[{id:'lab', level:4},{id:'auto3', level:14}] },
+    ]
   }
+};
 
-  function buyItem(id){
-    const item = state.items.find(x=>x.id===id);
-    const cost = costFor(item);
-    if(state.score < cost){ showToast('Нет монет'); return; }
-    state.score -= cost;
-    item.count++;
-    evaluateState();
-    render();
-    saveStateDebounced();
+/* ====== Игровое состояние и вспомогательные функции ====== */
+let PRESTIGE_THRESHOLD = 10000;
+let upgradeTemplates = []; // текущие шаблоны
+let upgrades = []; // объекты (id,name,desc,type,baseCost,baseGain,costMult,unlock,prereq, level, cost)
+let coins = 0;
+let totalCPS = 0;
+let clickPower = 1;
+const STORAGE_KEY = 'simpleClickerSave_v2';
+
+/* более "гладкая" формула стоимости:
+   price(level) = floor(baseCost * costMult^level * (1 + level * 0.02))
+   Это даёт немного растущую надбавку к экспоненте (чтобы large-level не становились слишком дешёвыми)
+*/
+function calcCost(template, level){
+  return Math.max(1, Math.floor(template.baseCost * Math.pow(template.costMult, level) * (1 + level * 0.02)));
+}
+
+/* сумма стоимости покупки n уровней от текущего level */
+function sumCostForN(template, startLevel, n){
+  let sum = 0;
+  for (let i = 0; i < n; i++){
+    sum += calcCost(template, startLevel + i);
   }
+  return sum;
+}
 
-  function evaluateState(){
-    // recalc cps and clickPower
-    let totalCps = 0;
-    state.items.forEach(it=>{
-      if(it.cps) totalCps += it.cps * it.count;
-      if(it.multiplier) {
-        // upgrade increases click power multiplicatively
-        state.clickPower = 1 * Math.pow(it.multiplier, it.count);
-      }
-    });
-    state.cps = totalCps;
-  }
-
-  function tick(dt){
-    if(state.cps>0){
-      state.score += state.cps * dt;
-      render();
+/* вычисляет максимально возможное количество покупок для данного апгрейда с текущими монетами */
+function maxAffordable(template, startLevel, availableCoins){
+  let count = 0;
+  // быстрый проход: экспоненциально увеличиваем шагы
+  let step = 1;
+  while (true){
+    const cost = sumCostForN(template, startLevel + count, step);
+    if (cost <= availableCoins){
+      count += step;
+      step *= 2;
+    } else {
+      if (step === 1) break;
+      step = Math.max(1, Math.floor(step/2));
     }
   }
+  return count;
+}
 
-  let last = performance.now();
-  function loop(now){
-    const dt = (now-last)/1000;
-    last = now;
-    tick(dt);
-    requestAnimationFrame(loop);
-  }
-
-  // click handling
-  clickBtn.addEventListener('click', ()=>{
-    state.score += state.clickPower;
-    // small visual feedback
-    clickBtn.style.transform = 'translateY(2px)';
-    setTimeout(()=>clickBtn.style.transform = '', 80);
-    render();
-    saveStateDebounced();
+/* инициализация апгрейдов — сохраняет уровни, если id совпадает с прошлым состоянием */
+function initUpgrades(preservedLevels = {}){
+  upgrades = upgradeTemplates.map(t => {
+    const level = preservedLevels[t.id] || 0;
+    return {
+      ...t,
+      level: level,
+      cost: calcCost(t, level)
+    };
   });
+}
 
-  // save/load
-  function saveState(){
-    try{
-      localStorage.setItem('clicker_state', JSON.stringify(state));
-      const t = new Date().toLocaleString();
-
-            localStorage.setItem('clicker_saved_at', t);
-      savedAtEl.textContent = t;
-      showToast('Сохранено');
-    }catch(e){
-      console.error('save error', e);
-      showToast('Ошибка сохранения');
+/* подсчет CPS и силы клика на основе уровней апгрейдов */
+function recalcDerived(){
+  totalCPS = 0;
+  clickPower = 1;
+  for (const u of upgrades){
+    if (u.level <= 0) continue;
+    if (u.type === 'cps'){
+      // учитываем возможный мультипликатор от mult-апгрейдов (если потребуется)
+      totalCPS += u.baseGain * u.level;
+    } else if (u.type === 'click'){
+      clickPower += u.baseGain * u.level;
+    } else if (u.type === 'mult'){
+      // мультипликатор силы клика: baseGain ^ level
+      clickPower *= Math.pow(u.baseGain, u.level);
     }
   }
-  const saveStateDebounced = debounce(saveState, 600);
+}
 
-  function loadState(){
-    try{
-      const raw = localStorage.getItem('clicker_state');
-      if(raw){
-        const parsed = JSON.parse(raw);
-        // simple merge to preserve code defaults
-        state.score = parsed.score || 0;
-        state.clickPower = parsed.clickPower || 1;
-        // merge items by id
-        if(Array.isArray(parsed.items)){
-          parsed.items.forEach(pi=>{
-            const it = state.items.find(s=>s.id===pi.id);
-            if(it) it.count = pi.count || 0;
-          });
-        }
-        evaluateState();
+/* рендер UI */
+function render(){
+  document.getElementById('coins').textContent = formatNumber(coins);
+  document.getElementById('cps').textContent = (totalCPS).toFixed(1);
+  document.getElementById('clickPower').textContent = formatNumber(clickPower);
+  document.getElementById('prestigeThreshold').textContent = PRESTIGE_THRESHOLD;
+
+    const percent = Math.min(100, Math.floor((coins / PRESTIGE_THRESHOLD) * 100));
+  document.getElementById('prestigeBar').style.width = percent + '%';
+  document.getElementById('coinsForPrestige').textContent = formatNumber(coins);
+  document.getElementById('prestigeThreshold2').textContent = formatNumber(PRESTIGE_THRESHOLD);
+  document.getElementById('prestigePercent').textContent = percent;
+
+  const list = document.getElementById('upgradesList');
+  list.innerHTML = '';
+  for (const u of upgrades){
+    // проверим доступность (по unlock и prereq)
+    let locked = false;
+    if ((u.unlock || 0) > coins) locked = true;
+    if (u.prereq){
+      const reqs = Array.isArray(u.prereq) ? u.prereq : [u.prereq];
+      for (const r of reqs){
+        const found = upgrades.find(x => x.id === r.id);
+        if (!found || (found.level || 0) < (r.level || 0)) { locked = true; break; }
       }
-    }catch(e){ console.error('load', e); }
-  }
-
-  saveBtn.addEventListener('click', saveState);
-  resetBtn.addEventListener('click', ()=>{
-    if(confirm('Сбросить прогресс?')) {
-      localStorage.removeItem('clicker_state');
-      localStorage.removeItem('clicker_saved_at');
-      location.reload();
     }
+
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = 
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <strong>${escapeHtml(u.name)}</strong>
+        <div class="muted">${u.type.toUpperCase()}</div>
+      </div>
+      <div class="muted" style="margin:6px 0">${escapeHtml(u.desc)}</div>
+      <div>Уровень: <strong>${u.level}</strong></div>
+      <div class="muted">Цена следующего: <strong>${formatNumber(u.cost)}</strong></div>
+      <div style="margin-top:8px;display:flex;gap:8px;align-items:center">
+        <button ${locked ? 'disabled' : ''} data-id="${u.id}" class="buyOne compact">Купить</button>
+        <button ${locked ? 'disabled' : ''} data-id="${u.id}" data-bulk="10" class="buyBulk compact">Купить x10</button>
+        <button ${locked ? 'disabled' : ''} data-id="${u.id}" data-bulk="100" class="buyBulk compact">Купить x100</button>
+        <button ${locked ? 'disabled' : ''} data-id="${u.id}" data-bulk="max" class="buyBulk compact">Купить MAX</button>
+      </div>
+    ;
+    list.appendChild(card);
+  }
+
+  // вешаем обработчики покупки
+  list.querySelectorAll('button.buyOne').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const id = btn.getAttribute('data-id');
+      buyUpgrade(id, 1);
+    });
   });
+  list.querySelectorAll('button.buyBulk').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const id = btn.getAttribute('data-id');
+      const bulk = btn.getAttribute('data-bulk');
+      if (bulk === 'max') buyUpgradeMax(id);
+      else buyUpgrade(id, parseInt(bulk,10));
+    });
+  });
+}
 
-  function showToast(text){
-    toastEl.textContent = text;
-    toastEl.classList.add('show');
-    setTimeout(()=>toastEl.classList.remove('show'), 1400);
+/* покупка апгрейда (n уровней) */
+function buyUpgrade(id, n){
+  const u = upgrades.find(x=>x.id===id);
+  if (!u) return;
+  if (n <= 0) return;
+  // проверка блокировок (unlock + prereq)
+  if ((u.unlock || 0) > coins) { alert('Апгрейд пока недоступен (unlock)'); return; }
+  if (u.prereq){
+    const reqs = Array.isArray(u.prereq) ? u.prereq : [u.prereq];
+    for (const r of reqs){
+      const found = upgrades.find(x => x.id === r.id);
+      if (!found || (found.level || 0) < (r.level || 0)) { alert('Апгрейд недоступен (требуется другой апгрейд)'); return; }
+    }
   }
-
-  function debounce(fn, ms){
-    let t;
-    return function(...a){ clearTimeout(t); t = setTimeout(()=>fn.apply(this,a), ms); };
-  }
-
-  // init
-  loadState();
-  evaluateState();
+  // подсчитать суммарную цену n уровней
+  const cost = sumCostForN(u, u.level, n);
+  if (coins < cost) { alert('Недостаточно монет'); return; }
+  coins -= cost;
+  u.level += n;
+  u.cost = calcCost(u, u.level);
+  recalcDerived();
+  saveGame();
   render();
-  requestAnimationFrame(loop);
+}
 
-  // autosave every 10 seconds
-  setInterval(saveState, 10000);
+/* покупка макс возможного */
+function buyUpgradeMax(id){
+  const u = upgrades.find(x=>x.id===id);
+  if (!u) return;
+  if ((u.unlock || 0) > coins) { alert('Апгрейд пока недоступен (unlock)'); return; }
+  if (u.prereq){
+    const reqs = Array.isArray(u.prereq) ? u.prereq : [u.prereq];
+    for (const r of reqs){
+      const found = upgrades.find(x => x.id === r.id);
+      if (!found || (found.level || 0) < (r.level || 0)) { alert('Апгрейд недоступен (требуется другой апгрейд)'); return; }
+    }
+  }
+  const maxCount = maxAffordable(u, u.level, coins);
+  if (maxCount <= 0){ alert('Невозможно купить ни одного уровня'); return; }
+  const cost = sumCostForN(u, u.level, maxCount);
+  coins -= cost;
+  u.level += maxCount;
 
-  // expose for debugging (optional)
-  window._clicker = { state, saveState, loadState };
+    u.cost = calcCost(u, u.level);
+  recalcDerived();
+  saveGame();
+  render();
+}
 
+/* кликанье */
+function doClick(){
+  coins += clickPower;
+  render();
+}
+
+/* авто-накопление CPS (каждую секунду) */
+setInterval(()=>{
+  coins += totalCPS;
+  render();
+}, 1000);
+
+/* сохранение/загрузка */
+function saveGame(){
+  const data = {
+    coins: coins,
+    preset: document.getElementById('balancePreset').value,
+    upgrades: upgrades.map(u=>({id:u.id, level:u.level})),
+    prestigeThreshold: PRESTIGE_THRESHOLD,
+    ts: Date.now()
+  };
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  return data;
+}
+
+function loadGame(){
+  const raw = localStorage.getItem(STORAGE_KEY);
+  if (!raw) return null;
+  try{ return JSON.parse(raw); }catch(e){ return null; }
+}
+
+/* вспомогательные: формат числа, экранирование */
+function formatNumber(x){
+  if (Math.abs(x) >= 1000000) return Math.round(x).toLocaleString();
+  return (Math.round(x*100)/100).toString();
+}
+function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+/* ====== Применение пресета и логика смены баланса ====== */
+function applyBalance(preset){
+  const b = BALANCES[preset] || BALANCES.normal;
+  const preservedLevels = {};
+  for (const u of upgrades) preservedLevels[u.id] = u.level || 0;
+
+  PRESTIGE_THRESHOLD = b.PRESTIGE_THRESHOLD;
+  upgradeTemplates = b.templates.map(t => ({ ...t }));
+  initUpgrades(preservedLevels);
+  recalcDerived();
+  saveGame();
+  render();
+}
+
+/* обработчик смены в селекте */
+document.getElementById('balancePreset').addEventListener('change', (e)=>{
+  if (!confirm('Сменить баланс? Уровни апгрейдов будут сохранены по id.')) {
+    const saved = loadGame();
+    if (saved && saved.preset) document.getElementById('balancePreset').value = saved.preset;
+    return;
+  }
+  applyBalance(e.target.value);
+});
+
+/* кнопки */
+document.getElementById('clickBtn').addEventListener('click', ()=>{ doClick(); });
+document.getElementById('saveBtn').addEventListener('click', ()=>{ saveGame(); alert('Сохранено'); });
+document.getElementById('resetBtn').addEventListener('click', ()=>{
+  if (!confirm('Сбросить прогресс?')) return;
+  localStorage.removeItem(STORAGE_KEY);
+  coins = 0;
+  upgrades.forEach(u=>{ u.level = 0; u.cost = calcCost(u, 0); });
+  recalcDerived();
+  saveGame();
+  render();
+});
+
+/* экспорт/импорт */
+document.getElementById('exportBtn').addEventListener('click', ()=>{
+  const data = saveGame();
+  document.getElementById('saveArea').value = JSON.stringify(data, null, 2);
+  alert('JSON с сохранением размещён в поле ниже. Скопируйте его для резервной копии.');
+});
+document.getElementById('importBtn').addEventListener('click', ()=>{
+  const txt = document.getElementById('saveArea').value.trim();
+  if (!txt){ alert('Поле пустое'); return; }
+  try{
+    const obj = JSON.parse(txt);
+    // небольшая валидация
+    if (!obj.preset || !BALANCES[obj.preset]) { if (!confirm('Пресет в JSON не распознан — применить default?')) return; }
+    // применяем пресет (или текущий), затем уровни
+    const preset = (obj.preset && BALANCES[obj.preset]) ? obj.preset : document.getElementById('balancePreset').value;
+    document.getElementById('balancePreset').value = preset;
+    applyBalance(preset);
+    if (Array.isArray(obj.upgrades)){
+      const levels = {};
+      for (const s of obj.upgrades) levels[s.id] = s.level || 0;
+      initUpgrades(levels);
+      recalcDerived();
+    }
+    coins = obj.coins || coins;
+    saveGame();
+    render();
+    alert('Импорт завершён');
+  }catch(e){
+    alert('Ошибка парсинга JSON: ' + e.message);
+  }
+});
+document.getElementById('clearSaveBtn').addEventListener('click', ()=>{
+  if (!confirm('Удалить локальное сохранение?')) return;
+  localStorage.removeItem(STORAGE_KEY);
+  alert('Локальное сохранение удалено.');
+});
+
+/* стартовая загрузка */
+(function start(){
+  const saved = loadGame();
+  if (saved && saved.preset && BALANCES[saved.preset]){
+    document.getElementById('balancePreset').value = saved.preset;
+    applyBalance(saved.preset);
+    if (saved.upgrades){
+            const levels = {};
+      for (const s of saved.upgrades) levels[s.id] = s.level || 0;
+      initUpgrades(levels);
+      recalcDerived();
+    }
+    coins = saved.coins || 0;
+  } else {
+    document.getElementById('balancePreset').value = 'casual';
+    applyBalance('casual');
+    coins = 20;
+  }
+  render();
 })();
 </script>
 </body>
 </html>
+  
