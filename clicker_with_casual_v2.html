@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Clicker v2</title>
+<style>
+  :root{
+    --bg:#f7f8fb; --card:#ffffff; --accent:#6c63ff; --muted:#7b7f8b;
+    --success:#28a745;
+  }
+  body{
+    margin:0; font-family: Inter, Roboto, Arial, sans-serif;
+    background: linear-gradient(180deg,#f7f8fb 0%, #eef2ff 100%);
+    color:#222; min-height:100vh; display:flex; align-items:center; justify-content:center;
+  }
+  .wrap{width:min(720px,96%); background:var(--card); border-radius:14px; box-shadow:0 10px 30px rgba(20,20,40,0.08); padding:20px; }
+  header{display:flex; gap:12px; align-items:center; margin-bottom:12px;}
+  .logo{width:56px;height:56px;border-radius:10px;background:linear-gradient(135deg,var(--accent),#9f9aff);display:flex;align-items:center;justify-content:center;color:white;font-weight:700;font-size:18px}
+  h1{margin:0;font-size:18px}
+  .row{display:flex;gap:12px;flex-wrap:wrap}
+  .card{flex:1; padding:14px; border-radius:10px; background:linear-gradient(180deg,#fff,#fbfdff); box-shadow:inset 0 -1px 0 rgba(12,15,30,0.02)}
+  .score{font-size:48px;font-weight:700; color:var(--accent); text-align:center; margin:8px 0}
+  .btn{display:inline-block;padding:12px 18px;background:var(--accent);color:white;border-radius:10px;border:0;font-weight:700;cursor:pointer;box-shadow:0 6px 14px rgba(108,99,255,0.18)}
+  .btn:active{transform:translateY(1px)}
+  .muted{color:var(--muted); font-size:13px}
+  .shop-item{display:flex;justify-content:space-between;align-items:center;margin-top:10px;padding:10px;border-radius:8px;background:#f8f9ff}
+  .small{font-size:13px}
+  footer{display:flex;justify-content:space-between;align-items:center;margin-top:12px}
+  .secondary{background:#eef0ff;color:var(--accent); padding:8px 12px; border-radius:8px; font-weight:600; cursor:pointer; border:0}
+  .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:18px;background:#1b1b1f;color:white;padding:8px 14px;border-radius:10px;opacity:0;pointer-events:none}
+  .toast.show{opacity:1;transition:opacity .25s}
+  @media(max-width:420px){ .score{font-size:34px} header{gap:8px} .logo{width:48px;height:48px;font-size:16px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="logo">CL</div>
+    <div>
+      <h1>Clicker v2</h1>
+      <div class="muted small">Нажимай на кнопку, покупай автоматизацию и улучшения. Прогресс сохраняется автоматически.</div>
+    </div>
+  </header>
+
+  <div class="row">
+    <div class="card" style="flex:0 0 48%;">
+      <div class="muted small">Монеты</div>
+      <div id="score" class="score">0</div>
+      <div style="text-align:center">
+        <button id="clickBtn" class="btn" style="width:86%;">Клик!</button>
+      </div>
+
+              <div style="display:flex;justify-content:center;margin-top:10px;gap:8px">
+        <button id="saveBtn" class="secondary">Сохранить</button>
+        <button id="resetBtn" class="secondary" title="Сброс прогресса">Сброс</button>
+      </div>
+    </div>
+
+    <div class="card" style="flex:0 0 48%;">
+      <div class="muted small">Магазин</div>
+
+      <div id="shop">
+        <!-- items injected by JS -->
+      </div>
+
+      <div style="margin-top:12px" class="muted small">Доход в секунду: <span id="cps">0</span></div>
+    </div>
+  </div>
+
+  <footer>
+    <div class="muted small">Версия 2 — локально на устройстве</div>
+    <div class="muted small">Сохранено: <span id="savedAt">—</span></div>
+  </footer>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script>
+(function(){
+  // state
+  let state = {
+    score: 0,
+    cps: 0, // coins per second
+    items: [
+      { id:'auto1', name:'Авто-кликер I', baseCost:25, cps:0.5, count:0 },
+      { id:'auto2', name:'Авто-кликер II', baseCost:150, cps:3, count:0 },
+      { id:'upgrade', name:'Улучшение клика', baseCost:50, multiplier:2, count:0 }
+    ],
+    clickPower: 1
+  };
+
+  // ui elements
+  const scoreEl = document.getElementById('score');
+  const clickBtn = document.getElementById('clickBtn');
+  const shopEl = document.getElementById('shop');
+  const cpsEl = document.getElementById('cps');
+  const savedAtEl = document.getElementById('savedAt');
+  const toastEl = document.getElementById('toast');
+  const saveBtn = document.getElementById('saveBtn');
+  const resetBtn = document.getElementById('resetBtn');
+
+  // helpers
+  function format(n){ return Math.floor(n); }
+  function costFor(item){ return Math.ceil(item.baseCost * Math.pow(1.15, item.count)); }
+
+  function render(){
+    scoreEl.textContent = format(state.score);
+    cpsEl.textContent = (state.cps).toFixed(1);
+    savedAtEl.textContent = localStorage.getItem('clicker_saved_at') || '—';
+
+    // shop
+    shopEl.innerHTML = '';
+    state.items.forEach(it => {
+      const div = document.createElement('div');
+      div.className = 'shop-item';
+      const left = document.createElement('div');
+      left.innerHTML = <div style="font-weight:700">${it.name}</div><div class="muted small">x${it.count}</div>;
+      const right = document.createElement('div');
+      const cost = costFor(it);
+      right.innerHTML = <div style="text-align:right"><div style="font-weight:700">${cost}</div><div class="muted small">c/шт</div></div>;
+      const buy = document.createElement('button');
+      buy.className = 'secondary';
+      buy.textContent = 'Купить';
+      buy.onclick = ()=>buyItem(it.id);
+      right.appendChild(buy);
+      div.appendChild(left);
+      div.appendChild(right);
+      shopEl.appendChild(div);
+    });
+  }
+
+  function buyItem(id){
+    const item = state.items.find(x=>x.id===id);
+    const cost = costFor(item);
+    if(state.score < cost){ showToast('Нет монет'); return; }
+    state.score -= cost;
+    item.count++;
+    evaluateState();
+    render();
+    saveStateDebounced();
+  }
+
+  function evaluateState(){
+    // recalc cps and clickPower
+    let totalCps = 0;
+    state.items.forEach(it=>{
+      if(it.cps) totalCps += it.cps * it.count;
+      if(it.multiplier) {
+        // upgrade increases click power multiplicatively
+        state.clickPower = 1 * Math.pow(it.multiplier, it.count);
+      }
+    });
+    state.cps = totalCps;
+  }
+
+  function tick(dt){
+    if(state.cps>0){
+      state.score += state.cps * dt;
+      render();
+    }
+  }
+
+  let last = performance.now();
+  function loop(now){
+    const dt = (now-last)/1000;
+    last = now;
+    tick(dt);
+    requestAnimationFrame(loop);
+  }
+
+  // click handling
+  clickBtn.addEventListener('click', ()=>{
+    state.score += state.clickPower;
+    // small visual feedback
+    clickBtn.style.transform = 'translateY(2px)';
+    setTimeout(()=>clickBtn.style.transform = '', 80);
+    render();
+    saveStateDebounced();
+  });
+
+  // save/load
+  function saveState(){
+    try{
+      localStorage.setItem('clicker_state', JSON.stringify(state));
+      const t = new Date().toLocaleString();
+
+            localStorage.setItem('clicker_saved_at', t);
+      savedAtEl.textContent = t;
+      showToast('Сохранено');
+    }catch(e){
+      console.error('save error', e);
+      showToast('Ошибка сохранения');
+    }
+  }
+  const saveStateDebounced = debounce(saveState, 600);
+
+  function loadState(){
+    try{
+      const raw = localStorage.getItem('clicker_state');
+      if(raw){
+        const parsed = JSON.parse(raw);
+        // simple merge to preserve code defaults
+        state.score = parsed.score || 0;
+        state.clickPower = parsed.clickPower || 1;
+        // merge items by id
+        if(Array.isArray(parsed.items)){
+          parsed.items.forEach(pi=>{
+            const it = state.items.find(s=>s.id===pi.id);
+            if(it) it.count = pi.count || 0;
+          });
+        }
+        evaluateState();
+      }
+    }catch(e){ console.error('load', e); }
+  }
+
+  saveBtn.addEventListener('click', saveState);
+  resetBtn.addEventListener('click', ()=>{
+    if(confirm('Сбросить прогресс?')) {
+      localStorage.removeItem('clicker_state');
+      localStorage.removeItem('clicker_saved_at');
+      location.reload();
+    }
+  });
+
+  function showToast(text){
+    toastEl.textContent = text;
+    toastEl.classList.add('show');
+    setTimeout(()=>toastEl.classList.remove('show'), 1400);
+  }
+
+  function debounce(fn, ms){
+    let t;
+    return function(...a){ clearTimeout(t); t = setTimeout(()=>fn.apply(this,a), ms); };
+  }
+
+  // init
+  loadState();
+  evaluateState();
+  render();
+  requestAnimationFrame(loop);
+
+  // autosave every 10 seconds
+  setInterval(saveState, 10000);
+
+  // expose for debugging (optional)
+  window._clicker = { state, saveState, loadState };
+
+})();
+</script>
+</body>
+</html>
